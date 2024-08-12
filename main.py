@@ -1,3 +1,5 @@
+import os
+import numpy as np
 import cobra
 from cobra import Metabolite, Reaction
 import matplotlib.pyplot as plt
@@ -11,19 +13,37 @@ carbon_exchanges = [
     'EX_co2_e'
 ]
 
-# list of exchange reactions with phosphorous
-phosphorous_exchanges = [
+# list of exchange reactions with phosphorus
+phosphorus_exchanges = [
     'EX_pi_e',
     # 'EX_pppi_e',
+]
+
+remove_exchanges = [
+    'EX_photon410_e',
+    'EX_photon430_e',
+    'EX_photon450_e',
+    'EX_photon470_e',
+    'EX_photon490_e',
+    'EX_photon510_e',
+    'EX_photon530_e',
+    'EX_photon550_e',
+    'EX_photon570_e',
+    'EX_photon590_e',
+    'EX_photon610_e',
+    'EX_photon630_e',
+    'EX_photon650_e',
+    'EX_photon670_e',
+    'EX_photon690_e',
 ]
 
 
 def get_redfield_exchanges(model):
     """TODO"""
     nitrogen_exchanges = []
-    phosphorous_exchanges = []
+    phosphorus_exchanges = []
     carbon_exchanges = []
-    # go through all the exchange and extract the ones which include nitrogen, carbon, phosphorous
+    # go through all the exchange and extract the ones which include nitrogen, carbon, phosphorus
     for exchange in model.exchanges:
         pass
         # get the coefficients
@@ -32,7 +52,7 @@ def get_redfield_exchanges(model):
         # if 'N' in coeff:
         #     nitrogen_exchanges.append(exchange)
 
-    return nitrogen_exchanges, phosphorous_exchanges, carbon_exchanges
+    return nitrogen_exchanges, phosphorus_exchanges, carbon_exchanges
 
 
 def update_model_exchanges(model):
@@ -106,7 +126,8 @@ def compare_constraints_to_baseline(
         model_file='models/LL.new.xml',
         carbon_change=1.0,
         nitrogen_change=1.0,
-        phosphorous_change=1.0
+        phosphorus_change=1.0,
+        outdir='out'
 ):
 
     # load model file
@@ -127,9 +148,9 @@ def compare_constraints_to_baseline(
     for exchange in nitrogen_exchanges:
         ex = model.reactions.get_by_id(exchange)
         ex.lower_bound *= nitrogen_change
-    for exchange in phosphorous_exchanges:
+    for exchange in phosphorus_exchanges:
         ex = model.reactions.get_by_id(exchange)
-        ex.lower_bound *= phosphorous_change
+        ex.lower_bound *= phosphorus_change
 
     # run file in new conditions
     solution_after = model.optimize()
@@ -140,27 +161,80 @@ def compare_constraints_to_baseline(
     fluxes_after = solution_after.fluxes
     # fluxes_after = fluxes_after[fluxes_after != 0]
 
-    # Define the width of the bars
-    bar_width = 0.4
+    # get the values of just the exchanges
+    shown_exchanges = [ex for ex in exchange_ids if ex not in remove_exchanges]
+    exchanges_before = [fluxes_before[ex] for ex in shown_exchanges]
+    exchanges_after = [fluxes_after[ex] for ex in shown_exchanges]
 
-    # make a pandas bar graph from the fluxes and save to file
-    # plt.style.use('dark_background')
-    fig = plt.figure()
-    # plot_before = [id for fluxes_before.index if id in exchange_ids]
-    values_before = [fluxes_before[ex] for ex in exchange_ids]
-    values_after = [fluxes_after[ex] for ex in exchange_ids]
-    plt.bar(exchange_ids, values_before, label='before', alpha=0.6)
-    plt.bar(exchange_ids, values_after, label='after', alpha=0.6)
+    # fig = plt.figure(figsize=(10, 8))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+    # Define the positions for the bars
+    bar_width = 0.35  # Width of each bar
+    r1 = np.arange(len(exchanges_before))  # Positions for the first set of bars
+    r2 = [x + bar_width for x in r1]  # Positions for the second set of bars
+
+    # Plot the bars
+    plt.bar(r1, exchanges_before, width=bar_width, label='before', alpha=0.6)
+    plt.bar(r2, exchanges_after, width=bar_width, label='after', alpha=0.6)
+
+    # Add labels and legend
+    title = f'c{carbon_change}_p{phosphorus_change}_n{nitrogen_change}'
+    # plt.yscale('log')
+    plt.title(title)
+    plt.xticks(fontsize=5)
     plt.legend()
-    plt.xticks(rotation=90)  # Rotate x-axis labels for better readability
+    plt.xticks([r + bar_width / 2 for r in range(len(shown_exchanges))], shown_exchanges, rotation=90)
     plt.ylabel('Flux Value')
-    plt.savefig(f'fluxes_comparison_c{carbon_change}_p{phosphorous_change}_n{nitrogen_change}.png', dpi=300)
 
+    # use grid for vertical lines
+    ax.grid(axis='x')
+
+    # make sure outdir exists
+    os.makedirs(outdir, exist_ok=True)
+
+    # Save the figure
+    plt.savefig(f'{outdir}/fluxes_comparison_{title}.png', dpi=600)
+
+    plt.show()
+
+
+def scan_redfield(
+        c_change_values=None,
+        n_change_values=None,
+        p_change_values=None,
+        outdir='out'
+):
+    if p_change_values is None:
+        p_change_values = [1]
+    if n_change_values is None:
+        n_change_values = [1]
+    if c_change_values is None:
+        c_change_values = [1]
+
+    # perform the scan
+    for c in c_change_values:
+        for n in n_change_values:
+            for p in p_change_values:
+                compare_constraints_to_baseline(
+                    model_file='models/LL.new.xml',
+                    carbon_change=c,
+                    nitrogen_change=n,
+                    phosphorus_change=p,
+                    outdir=outdir
+                )
 
 if __name__ == '__main__':
-    compare_constraints_to_baseline(
-        model_file='models/LL.new.xml',
-        carbon_change=-0.1,
-        nitrogen_change=1,
-        phosphorous_change=1,
+    # compare_constraints_to_baseline(
+    #     model_file='models/LL.new.xml',
+    #     carbon_change=0.0,
+    #     nitrogen_change=2.0,
+    #     phosphorus_change=1,
+    # )
+    scan_redfield(
+        c_change_values=[i for i in range(0, 20, 5)],
+        # n_change_values=[0, 0.4, 0.8, 1.0, 1.4, 1.8, 2.0],
+        p_change_values=[i for i in range(-10, 10, 5)],
+        outdir='out_test4'
     )
+
